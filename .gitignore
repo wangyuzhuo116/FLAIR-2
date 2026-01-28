@@ -129,3 +129,20 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Project-specific
+# Generated outputs
+logs/
+checkpoints/
+predictions/
+visualizations/
+data_splits/
+
+# Dataset (too large for git)
+FLAIR-2-main/
+*.tif
+*.npy
+
+# Temporary files
+*.tmp
+.DS_Store

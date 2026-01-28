@@ -128,13 +128,13 @@ class VSSBlock(nn.Module):
         x_flat = rearrange(x, 'b h w c -> b (h w) c')
         
         # VSS processing
-        x = x + self.drop_path(self.ss2d(self.norm1(x_flat)))
+        x_flat = x_flat + self.drop_path(self.ss2d(self.norm1(x_flat)))
         
         # MLP processing
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
+        x_flat = x_flat + self.drop_path(self.mlp(self.norm2(x_flat)))
         
         # Reshape back
-        x = rearrange(x, 'b (h w) c -> b h w c', h=H, w=W)
+        x = rearrange(x_flat, 'b (h w) c -> b h w c', h=H, w=W)
         
         return x
 
