@@ -1,0 +1,20 @@
+# FLAIR-2 10K Subset Configuration
+# For rapid experimentation with 10k stratified sample
+
+# Inherit from default config
+_base_: "default.yaml"
+
+# Data paths with subset enabled
+data:
+  use_subset: true
+  train_split_file: "./data_splits/subset_10k_train.csv"
+  val_split_file: "./data_splits/subset_10k_val.csv"
+
+# Subset-specific training settings
+training:
+  num_epochs: 50  # Fewer epochs for subset
+  batch_size: 8   # Can use larger batch for smaller subset
+
+# Logging
+logging:
+  exp_name: "flair2_subset_10k"

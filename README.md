@@ -1,7 +1,7 @@
 <div align="center">
 
-# FLAIR #2:
-# multi-source optical imagery and semantic segmantation
+# FLAIR #2: Dual-Stream Semantic Segmentation
+# VMamba + STmamba Architecture for Multi-Source Optical Imagery
 
 
 
@@ -69,57 +69,242 @@ The FLAIR #2 dataset is sampled countrywide and is composed of over 20 billion a
 </p>
 
 <br><br>
-## Baseline model 
+## Architecture
 
-A two-branch architecture integrating a U-Net <a href="https://github.com/qubvel/segmentation_models.pytorch"><img src="https://img.shields.io/badge/Link%20to-SMP-f4dbaa.svg"/></a> with a pre-trained ResNet34 encoder and a U-TAE <a href="https://github.com/VSainteuf/utae-paps"><img src="https://img.shields.io/badge/Link%20to-U--TAE-f4dbaa.svg"/></a> encompassing a temporal self-attention encoder is presented. The U-TAE branch aims at learning spatio-temporal embeddings from the high resolution satellite time series that are further integrated into the U-Net branch exploiting the aerial imagery. The proposed _U-T&T_ model features a fusion module to extend and reshape the U-TAE embeddings in order to add them towards the U-Net branch.   
+This repository implements a research-ready dual-stream architecture for semantic segmentation:
 
-<p align="center">
-  <img width="100%" src="images/flair-2-network.png">
-  <br>
-  <em>Overview of the proposed two-branch architecture.</em>
-</p>
+### Aerial Stream (VMamba)
+- Visual State Space Model inspired by VMamba
+- Processes 5-channel aerial imagery (RGB + NIR + Elevation)
+- Multi-scale feature extraction with 2D selective scan
+- 4-stage hierarchical encoder with progressive downsampling
 
-<br><br>
+### Satellite Stream (STmamba)
+- Spatio-Temporal State Space Model inspired by VideoMamba
+- Processes Sentinel-2 temporal sequences (10 bands, variable length)
+- Combined spatial and temporal selective scan
+- Temporal pooling for feature aggregation
 
-## Usage 
+### Fusion Module
+- Single-layer cross-attention between last-stage features
+- Query from aerial, Key/Value from satellite
+- Multi-head attention with 8 heads
+- Residual connections and feed-forward network
 
-The `flair-2-config.yml` file controls paths, hyperparameters and computing ressources. The file `requirement.txt` is listing used libraries for the baselines.
-
-To launch a training/inference/metrics computation, you can either use : 
-
-- ```
-  main.py --config_file=flair-2-config.yml
-  ```
-
--  use the `./notebook/flair-2-notebook.ipynb` notebook guiding you through data visualization, training and testing steps.
-
-A toy dataset (reduced size) is available to check that your installation and the information in the configuration file are correct.
-
-<br><br>
-
-## Leaderboard
-
-Please note that for participants to the FLAIR #2 challenge on CodaLab, a certain number of constraints must be satisfied (in particular, inference time). All infos are available on the _Overview_ page of the competion.
-
-| Model|Input|mIoU 
------------- | ------------- | -------------
-| baseline U-Net (ResNet34) | aerial imagery | 0.5470
-| baseline U-Net (ResNet34) + _metadata + augmentation_ | aerial imagery | 0.5593
-|||
-| baseline U-T&T | aerial and satellite imagery | 0.5594
-| baseline U-T&T + _filter clouds + monthly averages + data augmentation_ | aerial and satellite imagery | 0.5758
-
-If you want to submit a new entry, you can open a new issue.
-<b> Results of the challenge will be reported after the end of the challenge early October! </b>
-
-The baseline U-T&T + _filter clouds + monthly averages + data_augmentation_ obtains the following confusion matrix: 
+### Decoder
+- Progressive upsampling with skip connections
+- Concatenates multi-scale features from both streams
+- Produces per-pixel class predictions (13 classes)
 
 <br><br>
-<p align="center">
-  <img width="50%" src="images/flair-2-confmat.png">
-  <br>
-  <em>Baseline confusion matrix of the test dataset normalized by rows.</em>
-</p>
+
+## Installation
+
+```bash
+# Clone repository
+git clone https://github.com/wangyuzhuo116/FLAIR-2.git
+cd FLAIR-2
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+## Dataset Structure
+
+The code expects the FLAIR-2 dataset in the following structure:
+
+```
+FLAIR-2-main/dataset/
+├── train/
+│   ├── aerial/
+│   │   └── D004_2021/Z1_NN/img/IMG_*.tif
+│   ├── labels/
+│   │   └── D004_2021/Z1_NN/msk/MSK_*.tif
+│   └── sen/
+│       └── D004_2021/Z1_NN/sen/SEN2_sp_*.npy
+├── test/
+│   ├── aerial/
+│   ├── labels/
+│   └── sen/
+├── flair_aerial_metadata.json
+└── flair-2_centroids_sp_to_patch.json
+```
+
+## Usage
+
+### 1. Build 10k Stratified Subset (Optional)
+
+For rapid experimentation, create a stratified 10k subset:
+
+```bash
+python tools/build_subset.py \
+    --root-dir ./FLAIR-2-main/dataset \
+    --output-dir ./data_splits \
+    --subset-size 10000 \
+    --val-ratio 0.2 \
+    --seed 42
+```
+
+**Subset Strategy:**
+- Stratified sampling by region (Dxxx_YYYY) and zone (Z1_xx)
+- Maintains proportional representation from all regions
+- Train:Val split = 8:2 (8000 train, 2000 val)
+- Deterministic with fixed seed for reproducibility
+- Samples from both train and test to maximize diversity
+
+### 2. Training
+
+Train on full dataset:
+
+```bash
+python -m src.cli train --config configs/default.yaml
+```
+
+Train on 10k subset:
+
+```bash
+python -m src.cli train --config configs/subset_10k.yaml
+```
+
+Additional options:
+
+```bash
+python -m src.cli train \
+    --config configs/default.yaml \
+    --batch-size 8 \
+    --epochs 50 \
+    --lr 0.0001 \
+    --resume checkpoints/flair2_dual_stream/last.pth
+```
+
+### 3. Evaluation
+
+Evaluate on validation set:
+
+```bash
+python -m src.cli eval \
+    --config configs/default.yaml \
+    --checkpoint checkpoints/flair2_dual_stream/best.pth
+```
+
+Evaluate on test set:
+
+```bash
+python -m src.cli eval \
+    --config configs/default.yaml \
+    --checkpoint checkpoints/flair2_dual_stream/best.pth \
+    --test
+```
+
+### 4. Inference
+
+Run inference and save predictions:
+
+```bash
+python -m src.cli inference \
+    --config configs/default.yaml \
+    --checkpoint checkpoints/flair2_dual_stream/best.pth \
+    --output-dir ./predictions
+```
+
+### 5. Visualization
+
+Visualize predictions:
+
+```bash
+python -m src.cli visualize \
+    --config configs/default.yaml \
+    --checkpoint checkpoints/flair2_dual_stream/best.pth
+```
+
+## Configuration
+
+Edit `configs/default.yaml` to customize:
+
+- **Data paths**: Set `data.root_dir` to your dataset location
+- **Model architecture**: Adjust embedding dimensions, depths, etc.
+- **Training**: Batch size, learning rate, epochs, augmentation
+- **Hardware**: Number of workers, GPU settings
+- **Logging**: TensorBoard, CSV logging, checkpoint saving
+
+For subset training, use `configs/subset_10k.yaml` which inherits from `default.yaml`.
+
+## Optimization for L20 GPU
+
+The default configuration is optimized for a single NVIDIA L20 GPU:
+
+- Batch size: 4 (full dataset) / 8 (subset)
+- Mixed precision training (AMP) enabled
+- Gradient checkpointing in backbones
+- Efficient data loading with 4 workers
+- Progressive feature downsampling to reduce memory
+
+## Reproducibility
+
+All experiments are reproducible with fixed seed (default: 42):
+- Random seed set for Python, NumPy, PyTorch
+- CUDNN deterministic mode enabled
+- Deterministic subset sampling
+
+## Project Structure
+
+```
+FLAIR-2/
+├── configs/              # YAML configuration files
+│   ├── default.yaml
+│   └── subset_10k.yaml
+├── src/
+│   ├── data/            # Dataset and dataloaders
+│   ├── models/          # Model architectures (VMamba, STmamba, fusion, decoder)
+│   ├── training/        # Trainer, losses, metrics
+│   ├── utils/           # Config, logging, visualization, seed
+│   └── cli.py           # Command-line interface
+├── tools/
+│   └── build_subset.py  # Subset builder tool
+├── requirements.txt
+└── README.md
+```
+
+## Logging and Checkpoints
+
+During training, the following are generated:
+
+- **TensorBoard logs**: `logs/{exp_name}/tensorboard/`
+- **CSV logs**: `logs/{exp_name}/metrics.csv`
+- **Checkpoints**: `checkpoints/{exp_name}/`
+  - `best.pth`: Best model based on validation mIoU
+  - `last.pth`: Last epoch checkpoint
+  - `epoch_N.pth`: Periodic checkpoints every 10 epochs
+
+## Metrics
+
+The following metrics are computed:
+- **mIoU**: Mean Intersection over Union (primary metric)
+- **Accuracy**: Pixel-wise accuracy
+- **F1 Score**: Per-class and mean F1 score
+
+## Ablation Studies
+
+The architecture supports ablation studies:
+
+1. **Aerial-only**: Set `model.decoder.channels` to use only aerial features
+2. **Satellite-only**: Modify fusion to use only satellite stream
+3. **Fusion variants**: Switch between cross-attention and simple concatenation
+4. **Backbone depths**: Adjust `model.aerial.depths` and `model.satellite.depths`
+
+## Citation
+
+Please cite the FLAIR-2 dataset paper:
+
+```bibtex
+@inproceedings{ign2023flair2,
+      title={FLAIR: a Country-Scale Land Cover Semantic Segmentation Dataset From Multi-Source Optical Imagery}, 
+      author={Anatol Garioud and Nicolas Gonthier and Loic Landrieu and Apolline De Wit and Marion Valette and Marc Poupée and Sébastien Giordano and Boris Wattrelos},
+      year={2023},
+      booktitle={Advances in Neural Information Processing Systems (NeurIPS) 2023},
+      doi={https://doi.org/10.48550/arXiv.2310.13336},
+}
+```
 
 
 <br><br><br>

@@ -1,0 +1,124 @@
+# FLAIR-2 Default Configuration
+# Optimized for single L20 GPU
+
+# Data paths
+data:
+  # Root directory containing FLAIR-2-main/dataset/
+  root_dir: "./FLAIR-2-main/dataset"
+  
+  # Metadata files
+  aerial_metadata: "./FLAIR-2-main/dataset/flair_aerial_metadata.json"
+  centroids_file: "./FLAIR-2-main/dataset/flair-2_centroids_sp_to_patch.json"
+  
+  # Optional: Use subset split files
+  use_subset: false
+  train_split_file: null
+  val_split_file: null
+
+# Model architecture
+model:
+  # Aerial stream (VMamba-style)
+  aerial:
+    type: "vmamba"
+    in_channels: 5  # RGB + NIR + Elevation
+    embed_dim: 96
+    depths: [2, 2, 9, 2]  # Number of blocks per stage
+    ssm_d_state: 16
+    ssm_ratio: 2.0
+    mlp_ratio: 4.0
+    drop_path_rate: 0.2
+    
+  # Satellite stream (STmamba-like)
+  satellite:
+    type: "stmamba"
+    in_channels: 10  # Sentinel-2 10 bands
+    temporal_depth: 12  # Max temporal sequence length
+    embed_dim: 96
+    depths: [2, 2, 6, 2]
+    ssm_d_state: 16
+    ssm_ratio: 2.0
+    mlp_ratio: 4.0
+    drop_path_rate: 0.2
+    
+  # Fusion module
+  fusion:
+    type: "cross_attention"
+    num_heads: 8
+    dim: 256
+    
+  # Decoder
+  decoder:
+    type: "upsample"
+    num_classes: 13
+    channels: [256, 128, 64, 32]
+
+# Training settings
+training:
+  num_epochs: 100
+  batch_size: 4  # Optimized for L20 GPU
+  learning_rate: 0.0001
+  weight_decay: 0.0001
+  
+  # Optimization
+  optimizer: "adamw"
+  scheduler: "cosine"
+  warmup_epochs: 5
+  
+  # Mixed precision training
+  use_amp: true
+  
+  # Loss function
+  loss:
+    type: "cross_entropy"
+    class_weights: null  # Auto-computed if null
+    ignore_index: 255
+    
+  # Data augmentation
+  augmentation:
+    enabled: true
+    h_flip: 0.5
+    v_flip: 0.5
+    rotate: 0.5
+    scale_range: [0.8, 1.2]
+    brightness: 0.2
+    contrast: 0.2
+
+# Evaluation settings
+evaluation:
+  metrics: ["miou", "accuracy", "f1"]
+  num_classes: 13
+  ignore_index: 255
+
+# Logging and checkpoints
+logging:
+  exp_name: "flair2_dual_stream"
+  log_dir: "./logs"
+  tensorboard: true
+  csv_log: true
+  log_interval: 10  # Steps
+  
+checkpoint:
+  save_dir: "./checkpoints"
+  save_top_k: 3
+  monitor: "val_miou"
+  mode: "max"
+  save_last: true
+
+# Visualization
+visualization:
+  enabled: true
+  num_samples: 4
+  save_dir: "./visualizations"
+
+# Hardware settings
+hardware:
+  num_workers: 4
+  pin_memory: true
+  seed: 42
+
+# Inference settings
+inference:
+  batch_size: 1
+  output_dir: "./predictions"
+  save_logits: false
+  tta: false  # Test-time augmentation
